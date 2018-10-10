@@ -574,9 +574,12 @@ public class RunInCloudBuilder extends AbstractBuilder {
             // start the test run itself
             APITestRun testRun = user.startTestRun(config);
 
+            Long projectId = testRun.getProjectId();
+            Long testRunId = testRun.getId();
+
             // add the Bitbar Cloud link to the left-hand-side menu in Jenkins
-            BuildBadgeAction cloudLinkAction = new CloudLink(cloudSettings.resolveCloudUiUrl(), project.getId(),
-                    testRun.getId(), cloudVersion);
+            BuildBadgeAction cloudLinkAction = new CloudLink(cloudSettings.resolveCloudUiUrl(), projectId,
+                    testRunId, cloudVersion);
             build.addAction(cloudLinkAction);
             RunInCloudEnvInject variable = new RunInCloudEnvInject("CLOUD_LINK", cloudLinkAction.getUrlName());
             build.addAction(variable);
@@ -588,7 +591,7 @@ public class RunInCloudBuilder extends AbstractBuilder {
             RunInCloudBuilder.semaphore.release();
             releaseDone = true;
 
-            return waitForResults(user, project, testRun, workspace, launcher, listener, cloudSettings);
+            return waitForResults(user, testRun, workspace, launcher, listener, cloudSettings);
 
         } catch (APIException e) {
             listener.getLogger().println(String.format("%s: %s", Messages.ERROR_API(), e.getMessage()));
@@ -613,7 +616,7 @@ public class RunInCloudBuilder extends AbstractBuilder {
 
     @SuppressFBWarnings(value="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE")
     private boolean waitForResults(
-            final APIUser user, final APIProject project, final APITestRun testRun,
+            final APIUser user, final APITestRun testRun,
             FilePath workspace, Launcher launcher, TaskListener listener,
             TestdroidCloudSettings.DescriptorImpl cloudSettings) {
 
@@ -626,17 +629,17 @@ public class RunInCloudBuilder extends AbstractBuilder {
             try {
                 boolean testRunToAbort = false;
                 listener.getLogger().println("Waiting for results...");
-                scheduler.schedule(this, user, project.getId(), testRun.getId());
+                scheduler.schedule(this, user, testRun.getProjectId(), testRun.getId());
                 try {
                     synchronized (this) {
                         wait(waitForResultsBlock.getWaitForResultsTimeout() * 1000);
                     }
-                    scheduler.cancel(project.getId(), testRun.getId());
+                    scheduler.cancel(testRun.getProjectId(), testRun.getId());
                     testRun.refresh();
                     if (testRun.getState() == APITestRun.State.FINISHED) {
                         isDownloadOk = launcher.getChannel().call(
                                 new MachineIndependentResultsDownloader(
-                                        cloudSettings, listener, project.getId(), testRun.getId(),
+                                        cloudSettings, listener, testRun.getProjectId(), testRun.getId(),
                                         evaluateResultsPath(workspace), waitForResultsBlock.isDownloadScreenshots()));
 
                         if (!isDownloadOk) {
@@ -670,7 +673,7 @@ public class RunInCloudBuilder extends AbstractBuilder {
                         String.format("%s: %s", Messages.ERROR_CONNECTION(), e.getLocalizedMessage()));
                 LOGGER.log(Level.WARNING, Messages.ERROR_CONNECTION(), e);
             } finally {
-                scheduler.cancel(project.getId(), testRun.getId());
+                scheduler.cancel(testRun.getProjectId(), testRun.getId());
             }
             return isDownloadOk;
         } else {
